@@ -18,6 +18,28 @@ source from [Fenrirthviti/obs-virtual-cam](https://github.com/Fenrirthviti/obs-v
 * **virtual filter output** : A filter plugin sink obs source video to directshow interface.
 * **virtual source** : Four directshow Interfaces which can use in 3rd party software.
 
+## Camera name and MediaMTX
+
+Open **Tools → VirtualCam**:
+
+* **Camera Name** re-registers the DirectShow camera under a custom display
+  name. Registration is stored in `HKCR`, so Windows shows a UAC prompt. Only
+  the name changes; the CLSIDs stay the same, so existing camera permissions
+  and app selections keep working. Applications that already hold the camera
+  open must be restarted before they show the new name. Cameras 2-4 get the
+  name with a numeric suffix.
+* **MediaMTX** starts and stops the bundled `mediamtx.exe` as a hidden child
+  process. stdout/stderr are shown in the panel and appended to
+  `%APPDATA%\obs-virtualcam\logs\mediamtx.log`. The process is terminated when
+  OBS exits (job object kill-on-close). On first start the bundled
+  configuration is copied to `%APPDATA%\obs-virtualcam\mediamtx\mediamtx.yml`
+  so it can be edited without administrator rights; RTMP listens on `:1935`
+  and the other protocol servers are disabled. Publishing and pulling streams
+  is still configured manually in OBS.
+
+The MediaMTX binary is downloaded at configure time (`v1.21.4`, SHA-256
+verified) unless `-DMEDIAMTX_EXE=<path>` points to a local `mediamtx.exe`.
+
 ## Install
 
 The installer and compressed file can be found in [Release Page](https://github.com/miaulightouch/obs-virtual-cam/releases). Using installer is recommended, but if you want to use compressed file to install manually , please follow these instructions.

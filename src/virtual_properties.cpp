@@ -1,9 +1,18 @@
 #include "virtual_properties.h"
 #include "ui_virtual_properties.h"
 #include "virtual_output.h"
+#include "camera_name.h"
+#include "mediamtx_controller.h"
 #include <math.h>
 #include <obs-frontend-api.h>
 #include <util/config-file.h>
+
+#include <QDesktopServices>
+#include <QDir>
+#include <QFileInfo>
+#include <QFontDatabase>
+#include <QTextCursor>
+#include <QUrl>
 
 VirtualProperties::VirtualProperties(QWidget *parent)
 	: QDialog(parent),
@@ -20,6 +29,32 @@ VirtualProperties::VirtualProperties(QWidget *parent)
 		SLOT(onClickHorizontalFlip()));
 	connect(ui->checkBox_keepratio, SIGNAL(stateChanged(int)), this,
 		SLOT(onClickKeepAspectRatio()));
+
+	camera_name = new CameraNameController(this);
+	mediamtx = new MediamtxController(this);
+	connect(ui->pushButton_applyName, &QPushButton::clicked, this,
+		&VirtualProperties::onApplyCameraName);
+	connect(camera_name, &CameraNameController::applyFinished, this,
+		&VirtualProperties::onCameraNameApplied);
+	connect(ui->pushButton_mediaStart, &QPushButton::clicked, this,
+		&VirtualProperties::onMediamtxStart);
+	connect(ui->pushButton_mediaStop, &QPushButton::clicked, this,
+		&VirtualProperties::onMediamtxStop);
+	connect(ui->pushButton_openLog, &QPushButton::clicked, this,
+		&VirtualProperties::onMediamtxOpenLog);
+	connect(mediamtx, &MediamtxController::logText, this,
+		&VirtualProperties::onMediamtxLog);
+	connect(mediamtx, &MediamtxController::runningChanged, this,
+		&VirtualProperties::onMediamtxRunningChanged);
+
+	ui->lineEdit_mediaPath->setText(
+		QDir::toNativeSeparators(mediamtx->exePath()));
+	ui->lineEdit_mediaPath->setToolTip(
+		QDir::toNativeSeparators(mediamtx->configPath()));
+	ui->plainTextEdit_log->setMaximumBlockCount(3000);
+	ui->plainTextEdit_log->setFont(
+		QFontDatabase::systemFont(QFontDatabase::FixedFont));
+	onMediamtxRunningChanged(false);
 
 	config_t *config = obs_frontend_get_global_config();
 	config_set_default_bool(config, "VirtualOutput", "AutoStart", false);
@@ -42,6 +77,7 @@ VirtualProperties::VirtualProperties(QWidget *parent)
 	ui->comboBox_target->addItem("OBS-Camera4", ModeVideo4);
 	ui->comboBox_target->setCurrentIndex(
 		ui->comboBox_target->findData(target));
+	RefreshCameraNames();
 	ui->spinBox->setValue(delay);
 	ui->horizontalSlider->setValue(delay);
 	ui->label->setStyleSheet("QLabel { color : red; }");
@@ -58,6 +94,11 @@ VirtualProperties::VirtualProperties(QWidget *parent)
 
 VirtualProperties::~VirtualProperties()
 {
+	Shutdown();
+	if (mediamtx)
+		mediamtx->blockSignals(true);
+	if (camera_name)
+		camera_name->blockSignals(true);
 	virtual_output_disable();
 	virtual_output_terminate();
 	SaveSetting();
@@ -127,9 +168,113 @@ void VirtualProperties::onClickKeepAspectRatio()
 	UpdateParameter();
 }
 
+void VirtualProperties::Shutdown()
+{
+	if (mediamtx)
+		mediamtx->stop();
+}
+
+void VirtualProperties::onApplyCameraName()
+{
+	const QString name = ui->lineEdit_cameraName->text().trimmed();
+	if (!CameraNameController::isValidName(name)) {
+		ui->label_cameraStatus->setText(
+			QStringLiteral("Name must be 1-60 characters without "
+				       "quotes, backslashes or control "
+				       "characters."));
+		return;
+	}
+
+	ui->pushButton_applyName->setEnabled(false);
+	ui->lineEdit_cameraName->setEnabled(false);
+	ui->label_cameraStatus->setText(
+		QStringLiteral("Waiting for administrator approval..."));
+	camera_name->apply(name);
+}
+
+void VirtualProperties::onCameraNameApplied(bool success,
+					    const QString &message)
+{
+	ui->pushButton_applyName->setEnabled(true);
+	ui->lineEdit_cameraName->setEnabled(true);
+
+	const QString expected = ui->lineEdit_cameraName->text().trimmed();
+	if (success) {
+		RefreshCameraNames();
+		if (CameraNameController::currentName(0) == expected) {
+			ui->label_cameraStatus->setText(QStringLiteral(
+				"Camera name updated. Reopen "
+				"applications that use the camera to "
+				"see the new name."));
+		} else {
+			ui->label_cameraStatus->setText(QStringLiteral(
+				"Registration succeeded but the new "
+				"name could not be read back."));
+		}
+	} else if (message == QStringLiteral("cancelled")) {
+		ui->label_cameraStatus->setText(QStringLiteral(
+			"Administrator permission was cancelled."));
+	} else {
+		ui->label_cameraStatus->setText(
+			QStringLiteral("Failed to update camera name: %1")
+				.arg(message));
+	}
+}
+
+void VirtualProperties::onMediamtxStart()
+{
+	QString error;
+	if (!mediamtx->start(&error)) {
+		ui->label_mediaStatus->setText(
+			QStringLiteral("Failed to start"));
+		onMediamtxLog(QStringLiteral("Failed to start MediaMTX: %1\n")
+				      .arg(error));
+	}
+}
+
+void VirtualProperties::onMediamtxStop()
+{
+	mediamtx->stop();
+}
+
+void VirtualProperties::onMediamtxOpenLog()
+{
+	const QString path = mediamtx->logFilePath();
+	const QFileInfo info(path);
+	QDesktopServices::openUrl(QUrl::fromLocalFile(
+		info.exists() ? path : info.absolutePath()));
+}
+
+void VirtualProperties::onMediamtxLog(const QString &text)
+{
+	ui->plainTextEdit_log->moveCursor(QTextCursor::End);
+	ui->plainTextEdit_log->insertPlainText(text);
+	ui->plainTextEdit_log->moveCursor(QTextCursor::End);
+}
+
+void VirtualProperties::onMediamtxRunningChanged(bool running)
+{
+	ui->pushButton_mediaStart->setEnabled(!running);
+	ui->pushButton_mediaStop->setEnabled(running);
+	ui->label_mediaStatus->setText(running ? QStringLiteral("Running")
+					       : QStringLiteral("Stopped"));
+}
+
 void VirtualProperties::showEvent(QShowEvent *event)
 {
+	RefreshCameraNames();
 	UNUSED_PARAMETER(event);
+}
+
+void VirtualProperties::RefreshCameraNames()
+{
+	for (int i = 0; i < ui->comboBox_target->count(); ++i)
+		ui->comboBox_target->setItemText(
+			i, CameraNameController::currentName(i));
+
+	if (!camera_name->isBusy())
+		ui->lineEdit_cameraName->setText(
+			CameraNameController::currentName(0));
 }
 
 void VirtualProperties::closeEvent(QCloseEvent *event)

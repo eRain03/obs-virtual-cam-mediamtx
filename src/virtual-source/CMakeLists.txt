@@ -34,7 +34,7 @@ find_library(
 set(DSHOW_LIBRARY optimized ${DShowLib} debug ${DShowLibD})
 
 # setup compile options
-target_link_libraries(${PROJECT_NAME} PRIVATE ${DSHOW_LIBRARY} winmm Strmiids)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${DSHOW_LIBRARY} winmm Strmiids ole32 advapi32)
 target_link_options(${PROJECT_NAME} PRIVATE /ignore:4099 /NODEFAULTLIB:LIBCMTD /NODEFAULTLIB:LIBCMT /SAFESEH:NO)
 target_compile_options(${PROJECT_NAME} PRIVATE /W4)
 

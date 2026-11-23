@@ -1,5 +1,7 @@
 #include <streams.h>
 #include <initguid.h>
+#include <wchar.h>
+#include <objbase.h>
 #include "virtual-cam.h"
 #include "virtual-audio.h"
 
@@ -76,6 +78,51 @@ CFactoryTemplate g_Templates[NUM_VIDEO_FILTERS + 1] = {
 	 &AMSFilterA}};
 
 int g_cTemplates = sizeof(g_Templates) / sizeof(g_Templates[0]);
+
+static WCHAR g_camera_names[NUM_VIDEO_FILTERS][128] = {};
+
+// Number of video filters currently present in the registry. Used to keep the
+// registration count stable when only the display name changes.
+static int CountRegisteredVideoFilters()
+{
+	int count = 0;
+	for (int i = 0; i < NUM_VIDEO_FILTERS; i++) {
+		WCHAR guid[64] = {};
+		if (StringFromGUID2(*(g_Templates[i].m_ClsID), guid, 64) == 0)
+			continue;
+		WCHAR key[96] = {};
+		swprintf(key, 96, L"CLSID\\%ls", guid);
+		HKEY hkey = nullptr;
+		if (RegOpenKeyExW(HKEY_CLASSES_ROOT, key, 0, KEY_READ, &hkey) ==
+		    ERROR_SUCCESS) {
+			RegCloseKey(hkey);
+			count = i + 1;
+		}
+	}
+	return count > 0 ? count : 1;
+}
+
+static void SetCameraNames(const WCHAR *base)
+{
+	if (!base || !base[0])
+		return;
+
+	size_t len = wcslen(base);
+	if (len > 120)
+		len = 120;
+
+	for (int i = 0; i < NUM_VIDEO_FILTERS; i++) {
+		if (i == 0) {
+			wcsncpy(g_camera_names[i], base, len);
+			g_camera_names[i][len] = 0;
+		} else {
+			swprintf(g_camera_names[i], 128, L"%.*ls %d", (int)len,
+				 base, i + 1);
+			g_camera_names[i][127] = 0;
+		}
+		g_Templates[i].m_Name = g_camera_names[i];
+	}
+}
 
 STDAPI RegisterFilters(BOOL bRegister, int reg_video_filters)
 {
@@ -167,7 +214,21 @@ STDAPI DllInstall(BOOL bInstall, _In_opt_ LPCWSTR pszCmdLine)
 {
 	if (!bInstall)
 		return RegisterFilters(FALSE, NUM_VIDEO_FILTERS);
-	else if (lstrcmpW(pszCmdLine, L"1") == 0)
+
+	if (!pszCmdLine)
+		pszCmdLine = L"";
+
+	// Called by the OBS plugin as `regsvr32 /s /i:"apply:<name>"`. Re-register
+	// the same number of cameras with a new display name.
+	if (pszCmdLine && wcsncmp(pszCmdLine, L"apply:", 6) == 0 &&
+	    pszCmdLine[6] != 0) {
+		int count = CountRegisteredVideoFilters();
+		SetCameraNames(pszCmdLine + 6);
+		RegisterFilters(FALSE, count);
+		return RegisterFilters(TRUE, count);
+	}
+
+	if (lstrcmpW(pszCmdLine, L"1") == 0)
 		return RegisterFilters(TRUE, 1);
 	else if (lstrcmpW(pszCmdLine, L"2") == 0)
 		return RegisterFilters(TRUE, 2);

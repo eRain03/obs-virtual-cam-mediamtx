@@ -43,6 +43,11 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/helpers.cmake" NO_POLICY_SCOPE)
 find_package(FFmpeg REQUIRED COMPONENTS avfilter avutil)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE FFmpeg::avfilter FFmpeg::avutil)
 
+if(WIN32)
+  # ShellExecuteExW (runas) used to re-register the DirectShow camera.
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE shell32 advapi32)
+endif()
+
 # only build the 64bit version plugin
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   target_sources(
@@ -54,6 +59,10 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
             src/virtual_properties.cpp
             src/virtual_filter.h
             src/virtual_filter.cpp
+            src/camera_name.h
+            src/camera_name.cpp
+            src/mediamtx_controller.h
+            src/mediamtx_controller.cpp
             src/hflip.h
             src/hflip.cpp
             src/queue/share_queue_write.h
@@ -66,3 +75,8 @@ endif()
 
 # build the dshow source(both 32bit/64bit)
 add_subdirectory(src/virtual-source)
+
+# bundle the MediaMTX binary used by the plugin controls
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/mediamtx.cmake" NO_POLICY_SCOPE)
+endif()

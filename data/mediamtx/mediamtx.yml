@@ -1,0 +1,25 @@
+# MediaMTX configuration used by the OBS virtual camera plugin.
+# Edit this file to change the listening address, enable other protocols, or
+# restrict paths. Logs are also captured by the plugin (stdout is forwarded).
+
+logLevel: info
+logDestinations: [stdout]
+
+# Only RTMP is needed by the plugin; disable the other servers so the process
+# does not expose ports that are not in use.
+rtsp: false
+rtmp: true
+rtmpAddress: :1935
+hls: false
+webrtc: false
+srt: false
+moq: false
+
+api: false
+metrics: false
+pprof: false
+playback: false
+
+paths:
+  # Apply this to every path that is not explicitly configured below.
+  all_others:

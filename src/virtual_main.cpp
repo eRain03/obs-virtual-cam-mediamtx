@@ -1,12 +1,13 @@
 #include <obs-module.h>
 #include <QMainWindow>
 #include <QAction>
+#include <QPointer>
 #include <obs-frontend-api.h>
 #include "virtual_output.h"
 #include "virtual_filter.h"
 #include "virtual_properties.h"
 
-VirtualProperties *virtual_prop;
+QPointer<VirtualProperties> virtual_prop;
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("obs-virtual_output", "en-US")
@@ -26,10 +27,19 @@ bool obs_module_load(void)
 	obs_frontend_pop_ui_translation();
 
 	auto menu_cb = [] {
-		virtual_prop->setVisible(!virtual_prop->isVisible());
+		if (virtual_prop)
+			virtual_prop->setVisible(!virtual_prop->isVisible());
 	};
 
 	action->connect(action, &QAction::triggered, menu_cb);
 
 	return true;
+}
+
+void obs_module_unload(void)
+{
+	// The dialog owns the MediaMTX process. QPointer is null if Qt has
+	// already destroyed it, in which case the destructor stopped it.
+	if (virtual_prop)
+		virtual_prop->Shutdown();
 }
